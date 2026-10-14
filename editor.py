@@ -7,7 +7,12 @@ from editing import page_bytes, selected_text, selected_fonts, edit_page
 from fonts import installed_fonts, inspect_file, match_font, checked_font_bytes
 
 class TextDialog(simpledialog.Dialog):
-    def __init__(self, parent, initial='', original_fonts=(), original_size=12):
+    def __init__(self, parent, initial='', original_fonts=(), original_size=12, data=None, rect=None, mode='replace'):
+        self.preview_source=data
+        self.preview_rect=rect
+        self.edit_mode=mode
+        self.preview_job=None
+        self.preview_result=None
         self.initial = initial
         self.color = (0,0,0)
         self.original_fonts=original_fonts
@@ -18,6 +23,16 @@ class TextDialog(simpledialog.Dialog):
         super().__init__(parent, '글자 입력 · 글꼴 선택')
 
     def body(self, master):
+        outer=master
+        master=ttk.Frame(outer)
+        master.pack(side='left',fill='both',expand=True,padx=(0,12))
+        pane=ttk.Frame(outer)
+        pane.pack(side='right',fill='both',expand=True)
+        ttk.Label(pane,text='선택 부분 실시간 미리보기').pack(anchor='w')
+        self.live_canvas=tk.Canvas(pane,width=420,height=430,bg='#414a57',highlightthickness=0)
+        self.live_canvas.pack(fill='both',expand=True)
+        self.live_status=ttk.Label(pane,text='입력하면 미리보기가 갱신됩니다.',wraplength=420)
+        self.live_status.pack(fill='x',pady=6)
         ttk.Label(master,text='PDF 글꼴: '+(', '.join(self.original_fonts) or '새 글자'),wraplength=580).pack(anchor='w')
         auto='PC의 일치 글꼴을 자동 선택했습니다.' if self.auto_face else '일치 글꼴 없음 또는 여러 글꼴 혼합: 사용할 글꼴을 선택하세요.'
         ttk.Label(master,text=auto,wraplength=580).pack(anchor='w',pady=(0,5))
@@ -40,14 +55,58 @@ class TextDialog(simpledialog.Dialog):
         self.text = tk.Text(master, width=55, height=7, font=('맑은 고딕',11))
         self.text.pack(fill='both',expand=True)
         self.text.insert('1.0', self.initial)
+        self.text.bind('<<Modified>>',self.text_modified)
+        self.text.edit_modified(False)
         line = ttk.Frame(master)
         line.pack(fill='x',pady=8)
         ttk.Label(line,text='크기(pt)').pack(side='left')
-        self.size = ttk.Spinbox(line,from_=4,to=144,width=6)
+        self.size_var=tk.StringVar()
+        self.size = ttk.Spinbox(line,from_=4,to=144,width=6,textvariable=self.size_var)
         self.size.set(f'{max(4,min(144,self.original_size)):.1f}')
         self.size.pack(side='left',padx=8)
         ttk.Button(line,text='글자 색상',command=self.choose_color).pack(side='left')
+        self.size_var.trace_add('write',lambda *args:self.schedule_preview())
+        self.schedule_preview()
         return self.text
+
+    def text_modified(self,event=None):
+        if self.text.edit_modified():
+            self.text.edit_modified(False)
+            self.schedule_preview()
+
+    def schedule_preview(self):
+        if not hasattr(self,'text') or self.preview_source is None:return
+        if self.preview_job:self.after_cancel(self.preview_job)
+        self.preview_result=None
+        self.preview_job=self.after(220,self.update_preview)
+
+    def update_preview(self):
+        self.preview_job=None
+        try:
+            if self.combo.current()<0:raise ValueError('글꼴을 선택하세요.')
+            data=edit_page(self.preview_source,self.preview_rect,self.edit_mode,
+                          text=self.text.get('1.0','end-1c'),size=float(self.size.get()),color=self.color,font_face=self.font_face)
+            with fitz.open(stream=data,filetype='pdf') as doc:
+                box=fitz.Rect(self.preview_rect)
+                clip=(box+(-40,-40,40,40)) & doc[0].rect
+                scale=min(3, max(1,self.live_canvas.winfo_width()-16)/clip.width,
+                          max(1,self.live_canvas.winfo_height()-16)/clip.height)
+                pix=doc[0].get_pixmap(matrix=fitz.Matrix(scale,scale),clip=clip,alpha=False)
+                self.live_photo=tk.PhotoImage(data=pix.tobytes('png'))
+                self.live_canvas.delete('all')
+                self.live_canvas.create_image(self.live_canvas.winfo_width()/2,self.live_canvas.winfo_height()/2,image=self.live_photo)
+            self.preview_result=data
+            self.live_status.configure(text='저장에 적용될 모습입니다. 확인을 누르면 반영됩니다.')
+        except Exception as error:
+            self.preview_result=None
+            self.live_canvas.delete('all')
+            self.live_status.configure(text=str(error))
+
+    def destroy(self):
+        if self.preview_job:
+            self.after_cancel(self.preview_job)
+            self.preview_job=None
+        super().destroy()
 
     def filter_fonts(self):
         query=self.search.get().casefold()
@@ -66,6 +125,7 @@ class TextDialog(simpledialog.Dialog):
 
     def show_policy(self):
         self.policy_label.configure(text=self.font_face.policy[1] if self.font_face else '프로그램에 포함된 기본 한글 글꼴')
+        self.schedule_preview()
 
     def add_font(self):
         path=filedialog.askopenfilename(parent=self,filetypes=[('글꼴 파일','*.ttf *.otf *.ttc *.otc')])
@@ -89,6 +149,7 @@ class TextDialog(simpledialog.Dialog):
         rgb, _ = colorchooser.askcolor(parent=self, title='글자 색상')
         if rgb:
             self.color = tuple(v/255 for v in rgb)
+            self.schedule_preview()
 
     def validate(self):
         try:
@@ -99,6 +160,10 @@ class TextDialog(simpledialog.Dialog):
                 raise ValueError('목록에서 사용할 글꼴을 선택하세요.')
             if self.font_face is not None:
                 checked_font_bytes(self.font_face,self.text.get('1.0','end-1c'))
+            if self.preview_source is not None:
+                if self.preview_job:self.after_cancel(self.preview_job)
+                self.update_preview()
+                if self.preview_result is None:raise ValueError(self.live_status.cget('text'))
             return True
         except Exception as error:
             messagebox.showerror('입력 확인',str(error),parent=self)
@@ -198,11 +263,11 @@ class PageEditor(tk.Toplevel):
                 if mode=='replace' and not old.strip():
                     raise ValueError('선택 영역에 글자가 없습니다. 스캔 이미지 속 글자는 교체할 수 없습니다.')
                 names,size=selected_fonts(self.data,rect) if mode=='replace' else ([],12)
-                dialog = TextDialog(self,old,names,size)
+                dialog = TextDialog(self,old,names,size,self.data,rect,mode)
                 if not dialog.result:
                     return
                 text,size,color,font_face = dialog.result
-                result = edit_page(self.data,rect,mode,text=text,size=size,color=color,font_face=font_face)
+                result = dialog.preview_result
             self.history.append(self.data)
             self.history = self.history[-20:]
             self.data = result
