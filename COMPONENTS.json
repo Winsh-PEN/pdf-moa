@@ -108,6 +108,22 @@
       ]
     },
     {
+      "name": "fonttools",
+      "version": "4.61.1",
+      "license_files": [
+        "licenses/fonttools/fonttools-4.61.1.dist-info/licenses/LICENSE",
+        "licenses/fonttools/fonttools-4.61.1.dist-info/licenses/LICENSE.external"
+      ]
+    },
+    {
+      "name": "lxml",
+      "version": "6.1.1",
+      "license_files": [
+        "licenses/lxml/lxml-6.1.1.dist-info/licenses/LICENSE.txt",
+        "licenses/lxml/lxml-6.1.1.dist-info/licenses/LICENSES.txt"
+      ]
+    },
+    {
       "name": "MuPDF",
       "version": "1.26.12",
       "license_files": [

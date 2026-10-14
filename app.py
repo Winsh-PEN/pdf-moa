@@ -15,7 +15,7 @@ class App:
         self.root = root
         self.entries = []
         self.history = []
-        root.title('PDF 모아 1.1.0-rc1 · 합치기 / 편집 / 분리')
+        root.title('PDF 모아 1.2.0-rc1 · 합치기 / 편집 / 분리')
         root.geometry('1360x900')
         root.minsize(1050, 700)
         root.configure(bg='#eef2f7')
@@ -39,7 +39,7 @@ class App:
         ttk.Button(bar, text='순서 뒤집기', command=self.reverse_order).pack(side='left', padx=6)
         ttk.Button(bar, text='글자·사진 편집', command=self.edit_selected).pack(side='left')
         ttk.Button(bar, text='목록 비우기', command=self.clear).pack(side='right')
-        ttk.Button(bar, text='정보', command=lambda: messagebox.showinfo('PDF 모아 1.1.0-rc1', 'AGPL-3.0-only 공개 소스 프로그램\n보증 없이 제공됩니다. 라이선스 조건에 따라 수정·재배포할 수 있습니다.\n\n소스: https://github.com/Winsh-PEN/pdf-moa\n라이선스: 배포 폴더의 LICENSE 및 licenses\n사용한 편집 엔진: PyMuPDF / MuPDF')).pack(side='right', padx=4)
+        ttk.Button(bar, text='정보', command=lambda: messagebox.showinfo('PDF 모아 1.2.0-rc1', 'AGPL-3.0-only 공개 소스 프로그램\n보증 없이 제공됩니다. 라이선스 조건에 따라 수정·재배포할 수 있습니다.\n\n소스: https://github.com/Winsh-PEN/pdf-moa\n라이선스: 배포 폴더의 LICENSE 및 licenses\n사용한 편집 엔진: PyMuPDF / MuPDF')).pack(side='right', padx=4)
         ttk.Label(body, text='PDF 파일을 창에 끌어 놓으세요 · 페이지를 드래그해 순서 변경 · Ctrl / Shift로 여러 페이지 선택').pack(anchor='w', pady=(0, 10))
         panes = ttk.Panedwindow(body, orient='horizontal')
         panes.pack(fill='both', expand=True)

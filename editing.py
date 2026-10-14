@@ -2,6 +2,8 @@
 from io import BytesIO
 import pymupdf as fitz
 from pypdf import PdfReader, PdfWriter
+from fonts import checked_font_bytes
+import hashlib
 
 def page_bytes(entry):
     with PdfWriter() as writer:
@@ -17,7 +19,14 @@ def selected_text(data, rect):
     with fitz.open(stream=data, filetype='pdf') as doc:
         return doc[0].get_textbox(fitz.Rect(rect))
 
-def edit_page(data, rect, mode, text='', size=12, color=(0,0,0), image=None):
+def selected_fonts(data, rect):
+    with fitz.open(stream=data,filetype='pdf') as doc:
+        box=fitz.Rect(rect)
+        spans=[s for b in doc[0].get_text('dict')['blocks'] for line in b.get('lines',[]) for s in line['spans']
+               if s['text'].strip() and not (fitz.Rect(s['bbox']) & box).is_empty]
+        return sorted({s['font'] for s in spans}), (spans[0]['size'] if spans else 12)
+
+def edit_page(data, rect, mode, text='', size=12, color=(0,0,0), image=None, font_face=None):
     with fitz.open(stream=data, filetype='pdf') as doc:
         page = doc[0]
         box = fitz.Rect(rect) & page.rect
@@ -35,8 +44,13 @@ def edit_page(data, rect, mode, text='', size=12, color=(0,0,0), image=None):
                     raise ValueError('선택 영역에 글자가 없습니다. 스캔 이미지 속 글자 교체는 지원하지 않습니다.')
                 page.add_redact_annot(box, fill=False, cross_out=False)
                 page.apply_redactions(images=0, graphics=0, text=0)
+            fontname='korea'
+            if font_face is not None:
+                fontbuffer=checked_font_bytes(font_face,text)
+                fontname='UserFont'+hashlib.sha256(fontbuffer).hexdigest()[:16]
+                page.insert_font(fontname=fontname,fontbuffer=fontbuffer)
             remaining = page.insert_textbox(box, text, fontsize=size,
-                                            fontname='korea', color=color, overlay=True)
+                                            fontname=fontname, color=color, overlay=True)
             if remaining < 0:
                 raise ValueError('글자가 영역에 들어가지 않습니다. 영역을 넓히거나 글자 크기를 줄여주세요. 변경은 적용되지 않았습니다.')
         else:

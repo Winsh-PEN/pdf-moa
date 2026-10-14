@@ -3,15 +3,39 @@ import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog, colorchooser
 from pathlib import Path
 import pymupdf as fitz
-from editing import page_bytes, selected_text, edit_page
+from editing import page_bytes, selected_text, selected_fonts, edit_page
+from fonts import installed_fonts, inspect_file, match_font, checked_font_bytes
 
 class TextDialog(simpledialog.Dialog):
-    def __init__(self, parent, initial=''):
+    def __init__(self, parent, initial='', original_fonts=(), original_size=12):
         self.initial = initial
         self.color = (0,0,0)
-        super().__init__(parent, '글자 입력 · 새 글꼴로 교체됩니다')
+        self.original_fonts=original_fonts
+        self.original_size=original_size
+        self.faces=list(installed_fonts())
+        self.auto_face=match_font(original_fonts,self.faces)
+        self.font_face=self.auto_face
+        super().__init__(parent, '글자 입력 · 글꼴 선택')
 
     def body(self, master):
+        ttk.Label(master,text='PDF 글꼴: '+(', '.join(self.original_fonts) or '새 글자'),wraplength=580).pack(anchor='w')
+        auto='PC의 일치 글꼴을 자동 선택했습니다.' if self.auto_face else '일치 글꼴 없음 또는 여러 글꼴 혼합: 사용할 글꼴을 선택하세요.'
+        ttk.Label(master,text=auto,wraplength=580).pack(anchor='w',pady=(0,5))
+        searchbar=ttk.Frame(master)
+        searchbar.pack(fill='x')
+        ttk.Label(searchbar,text='글꼴 검색').pack(side='left')
+        self.search=tk.StringVar()
+        ttk.Entry(searchbar,textvariable=self.search).pack(side='left',fill='x',expand=True,padx=6)
+        ttk.Button(searchbar,text='글꼴 파일 추가',command=self.add_font).pack(side='left')
+        self.combo=ttk.Combobox(master,state='readonly',width=72)
+        self.combo.pack(fill='x',pady=5)
+        self.combo.bind('<<ComboboxSelected>>',self.pick_font)
+        self.policy_label=ttk.Label(master,wraplength=580)
+        self.policy_label.pack(anchor='w')
+        ttk.Button(master,text='글꼴 라이선스 정보',command=self.show_license).pack(anchor='w',pady=4)
+        ttk.Label(master,text='파일의 포함 제한을 검사합니다. 상업적 이용 등 별도 이용조건은 글꼴 제공처에서 확인하세요.',wraplength=580).pack(anchor='w',pady=(0,8))
+        self.search.trace_add('write',lambda *args:self.filter_fonts())
+        self.filter_fonts()
         ttk.Label(master, text='입력할 글자 (여러 줄 가능)').pack(anchor='w')
         self.text = tk.Text(master, width=55, height=7, font=('맑은 고딕',11))
         self.text.pack(fill='both',expand=True)
@@ -20,10 +44,46 @@ class TextDialog(simpledialog.Dialog):
         line.pack(fill='x',pady=8)
         ttk.Label(line,text='크기(pt)').pack(side='left')
         self.size = ttk.Spinbox(line,from_=4,to=144,width=6)
-        self.size.set('12')
+        self.size.set(f'{max(4,min(144,self.original_size)):.1f}')
         self.size.pack(side='left',padx=8)
         ttk.Button(line,text='글자 색상',command=self.choose_color).pack(side='left')
         return self.text
+
+    def filter_fonts(self):
+        query=self.search.get().casefold()
+        self.shown=[None]+[f for f in self.faces if query in f.name.casefold()]
+        self.combo['values']=['기본 한글 글꼴 (MuPDF)']+[f.label for f in self.shown[1:]]
+        if self.font_face in self.shown:
+            self.combo.current(self.shown.index(self.font_face))
+        else:
+            self.combo.set('글꼴을 선택하세요')
+        self.show_policy()
+
+    def pick_font(self,event=None):
+        index=self.combo.current()
+        if index>=0: self.font_face=self.shown[index]
+        self.show_policy()
+
+    def show_policy(self):
+        self.policy_label.configure(text=self.font_face.policy[1] if self.font_face else '프로그램에 포함된 기본 한글 글꼴')
+
+    def add_font(self):
+        path=filedialog.askopenfilename(parent=self,filetypes=[('글꼴 파일','*.ttf *.otf *.ttc *.otc')])
+        if not path: return
+        try:
+            added=inspect_file(path)
+            self.faces.extend(f for f in added if f not in self.faces)
+            self.font_face=added[0]
+            self.search.set('')
+            self.filter_fonts()
+        except Exception as error:
+            messagebox.showerror('글꼴 열기 실패',str(error),parent=self)
+
+    def show_license(self):
+        text=(self.font_face.license_text if self.font_face else 'MuPDF 기본 글꼴: 배포 폴더의 licenses/MuPDF 글꼴 고지를 확인하세요.')
+        if self.font_face:
+            text=self.font_face.name+'\n'+self.font_face.policy[1]+'\n\n'+text
+        messagebox.showinfo('글꼴 파일의 라이선스 정보',text,parent=self)
 
     def choose_color(self):
         rgb, _ = colorchooser.askcolor(parent=self, title='글자 색상')
@@ -34,14 +94,18 @@ class TextDialog(simpledialog.Dialog):
         try:
             self.value_size = float(self.size.get())
             if not 4 <= self.value_size <= 144 or not self.text.get('1.0','end-1c').strip():
-                raise ValueError()
+                raise ValueError('글자와 4~144pt 크기를 입력하세요.')
+            if self.combo.current()<0:
+                raise ValueError('목록에서 사용할 글꼴을 선택하세요.')
+            if self.font_face is not None:
+                checked_font_bytes(self.font_face,self.text.get('1.0','end-1c'))
             return True
-        except ValueError:
-            messagebox.showerror('입력 확인','글자와 4~144pt 크기를 입력하세요.',parent=self)
+        except Exception as error:
+            messagebox.showerror('입력 확인',str(error),parent=self)
             return False
 
     def apply(self):
-        self.result = (self.text.get('1.0','end-1c'),self.value_size,self.color)
+        self.result = (self.text.get('1.0','end-1c'),self.value_size,self.color,self.font_face)
 
 class PageEditor(tk.Toplevel):
     def __init__(self, parent, entry, on_apply):
@@ -61,7 +125,7 @@ class PageEditor(tk.Toplevel):
         for label, mode in [('기존 글자 교체','replace'),('글자 추가','text'),('사진 추가','image')]:
             ttk.Radiobutton(bar,text=label,variable=self.mode,value=mode).pack(side='left',padx=8)
         ttk.Button(bar,text='편집 취소(한 단계)',command=self.undo).pack(side='right')
-        ttk.Label(self,text='추가/교체할 영역을 드래그하세요. 교체는 글자 전체를 포함해야 하며 기본 한글 글꼴을 사용합니다.',padding=(12,0,12,8)).pack(fill='x')
+        ttk.Label(self,text='추가/교체할 영역을 드래그하세요. 원래 글꼴을 PC에서 찾아 선택하며 다른 글꼴이나 파일도 사용할 수 있습니다.',padding=(12,0,12,8)).pack(fill='x')
         self.canvas = tk.Canvas(self,bg='#414a57',highlightthickness=0)
         self.canvas.pack(fill='both',expand=True,padx=12)
         footer = ttk.Frame(self,padding=12)
@@ -133,11 +197,12 @@ class PageEditor(tk.Toplevel):
                 old = selected_text(self.data,rect) if mode=='replace' else ''
                 if mode=='replace' and not old.strip():
                     raise ValueError('선택 영역에 글자가 없습니다. 스캔 이미지 속 글자는 교체할 수 없습니다.')
-                dialog = TextDialog(self,old)
+                names,size=selected_fonts(self.data,rect) if mode=='replace' else ([],12)
+                dialog = TextDialog(self,old,names,size)
                 if not dialog.result:
                     return
-                text,size,color = dialog.result
-                result = edit_page(self.data,rect,mode,text=text,size=size,color=color)
+                text,size,color,font_face = dialog.result
+                result = edit_page(self.data,rect,mode,text=text,size=size,color=color,font_face=font_face)
             self.history.append(self.data)
             self.history = self.history[-20:]
             self.data = result

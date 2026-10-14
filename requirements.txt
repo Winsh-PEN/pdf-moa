@@ -4,3 +4,5 @@ tkinterdnd2==0.6.4
 pypdfium2==5.14.0
 Pillow==12.3.0
 PyMuPDF==1.26.7
+fonttools==4.61.1
+lxml==6.1.1
