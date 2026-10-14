@@ -1,0 +1,118 @@
+{
+  "python": "3.12.14",
+  "components": [
+    {
+      "name": "pypdf",
+      "version": "6.10.0",
+      "license_files": [
+        "licenses/pypdf/pypdf-6.10.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pypdfium2",
+      "version": "5.14.0",
+      "license_files": [
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/LICENSES/Apache-2.0.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/LICENSES/BSD-3-Clause.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/LICENSES/CC-BY-4.0.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/abseil.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/agg23.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/fast_float.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/freetype.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/icu.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/lcms.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libjpeg_turbo.ijg",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libjpeg_turbo.md",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libopenjpeg.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/libpng.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/llvm-libc.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/pdfium-binaries.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/pdfium.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/simdutf.txt",
+        "licenses/pypdfium2/pypdfium2-5.14.0.dist-info/licenses/data/windows_x64/BUILD_LICENSES/zlib.txt"
+      ]
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "license_files": [
+        "licenses/pillow/pillow-12.3.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.3.5",
+      "license_files": [
+        "licenses/numpy/numpy-2.3.5.dist-info/LICENSE.txt",
+        "licenses/numpy/numpy/_core/include/numpy/random/LICENSE.txt",
+        "licenses/numpy/numpy/ma/LICENSE",
+        "licenses/numpy/numpy/random/LICENSE.md"
+      ]
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.2",
+      "license_files": [
+        "licenses/cryptography/cryptography-50.0.2.dist-info/licenses/LICENSE",
+        "licenses/cryptography/cryptography-50.0.2.dist-info/licenses/LICENSE.APACHE",
+        "licenses/cryptography/cryptography-50.0.2.dist-info/licenses/LICENSE.BSD"
+      ]
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "license_files": [
+        "licenses/cffi/cffi-2.1.1.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.2",
+      "license_files": [
+        "licenses/charset-normalizer/charset_normalizer-3.5.2.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "license_files": [
+        "licenses/typing_extensions/typing_extensions-4.16.0.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "tkinterdnd2",
+      "version": "0.6.4",
+      "license_files": [
+        "licenses/tkinterdnd2/tkinterdnd2-0.6.4.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "pyinstaller",
+      "version": "6.22.3",
+      "license_files": [
+        "licenses/pyinstaller/pyinstaller-6.22.3.dist-info/licenses/COPYING.txt"
+      ]
+    },
+    {
+      "name": "pyinstaller-hooks-contrib",
+      "version": "2026.8",
+      "license_files": [
+        "licenses/pyinstaller-hooks-contrib/pyinstaller_hooks_contrib-2026.8.dist-info/licenses/LICENSE"
+      ]
+    },
+    {
+      "name": "PyMuPDF",
+      "version": "1.26.7",
+      "license_files": [
+        "licenses/PyMuPDF/pymupdf-1.26.7.dist-info/COPYING"
+      ]
+    },
+    {
+      "name": "MuPDF",
+      "version": "1.26.12",
+      "license_files": [
+        "licenses/MuPDF/COPYING"
+      ]
+    }
+  ]
+}
