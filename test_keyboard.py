@@ -1,3 +1,4 @@
+import gc
 import unittest
 import tempfile
 from pathlib import Path
@@ -39,6 +40,7 @@ class KeyboardNavigationTest(unittest.TestCase):
             self.assertEqual(len(app.history), history_length)
         finally:
             root.destroy()
+            gc.collect()
             folder.cleanup()
 
 

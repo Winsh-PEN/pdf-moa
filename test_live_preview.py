@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+import gc
 import tkinter as tk
 import unittest
 import pymupdf as fitz
@@ -42,5 +43,6 @@ class LivePreviewTest(unittest.TestCase):
             if errors:raise errors[0]
         finally:
             if root.winfo_exists():root.destroy()
+            gc.collect()
 
 if __name__=='__main__':unittest.main()

@@ -1,4 +1,5 @@
 pypdf==6.10.0
+cryptography==50.0.2
 pyinstaller==6.22.3
 tkinterdnd2==0.6.4
 pypdfium2==5.14.0

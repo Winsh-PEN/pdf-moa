@@ -4,9 +4,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+import logging
 import os
 import re
 from fontTools.ttLib import TTFont, TTCollection
+from fontTools import subset
+
+# fontTools reports dropped tables (meta, MERG, ...) while subsetting; not useful to users.
+logging.getLogger('fontTools').setLevel(logging.ERROR)
+
+BUILTIN_LABEL = '기본 한글 글꼴 (프로그램 내장)'
 
 
 def embedding_policy(flags):
@@ -56,6 +63,13 @@ def open_face(path, index):
 
 def inspect_file(path):
     path = str(Path(path).resolve())
+    stat = os.stat(path)
+    # Keyed by modification time and size, so a replaced file is checked again.
+    return list(_inspect(path, stat.st_mtime_ns, stat.st_size))
+
+
+@lru_cache(maxsize=1024)
+def _inspect(path, mtime, size):
     with open(path,'rb') as stream:
         collection = stream.read(4) == b'ttcf'
     count = 1
@@ -83,7 +97,7 @@ def inspect_file(path):
             faces.append(FontFace(path,index,name,tuple(set(aliases)),flags,
                                   '\n'.join(values([13,14])) or '글꼴 파일에 라이선스 설명이 없습니다. 제공처 이용조건을 확인하세요.',
                                   'fvar' in font))
-    return faces
+    return tuple(faces)
 
 
 @lru_cache(maxsize=1)
@@ -121,16 +135,64 @@ def match_font(names, faces):
     return next((f for f in matches if f.policy[0]),matches[0])
 
 
+def needed_chars(text):
+    """The distinct characters of text in a stable order (a cache key)."""
+    return ''.join(sorted(set(text)))
+
+
+def embed_bytes(data, index, chars, allow_subset, font_name='이 글꼴'):
+    """Font data to embed for chars: only the glyphs they need when the font allows it.
+
+    Raises ValueError when the font lacks one of the characters.
+    """
+    font = TTFont(BytesIO(data), fontNumber=index, lazy=True)
+    try:
+        cmap = font.getBestCmap() or {}
+        missing = sorted({c for c in chars if not c.isspace() and ord(c) not in cmap})
+        if missing:
+            raise ValueError(f'{font_name}에서 지원하지 않는 글자: '+''.join(missing[:24])+'\n다른 글꼴을 선택하세요.')
+        if allow_subset:
+            options = subset.Options()
+            options.name_IDs = ['*']
+            options.name_languages = ['*']
+            options.name_legacy = True
+            options.notdef_outline = True
+            options.layout_features = ['*']
+            options.legacy_kern = True
+            subsetter = subset.Subsetter(options)
+            subsetter.populate(text=chars)
+            subsetter.subset(font)
+        buffer = BytesIO()
+        font.save(buffer)
+        return buffer.getvalue()
+    finally:
+        font.close()
+
+
+@lru_cache(maxsize=32)
+def _file_embed_bytes(path, index, mtime, size, chars, allow_subset):
+    with open(path,'rb') as stream:
+        data = stream.read()
+    return embed_bytes(data, index, chars, allow_subset)
+
+
 def checked_font_bytes(face, text):
-    # Re-read the actual file on every use, including after file replacement.
+    """Embeddable font data for text after checking the file's current restrictions.
+
+    The font is reduced to the glyphs text needs, except when fsType 0x100
+    forbids subsetting; then the complete face is embedded.
+    """
+    # Re-check the actual file on every use, including after file replacement.
+    stat = os.stat(face.path)
     fresh=inspect_file(face.path)[face.index]
     allowed,message=fresh.policy
     if not allowed: raise ValueError(message+'\n다른 글꼴을 선택하세요.')
-    with open_face(face.path,face.index) as font:
-        cmap=font.getBestCmap() or {}
-        missing=sorted({c for c in text if not c.isspace() and ord(c) not in cmap})
-        if missing:
-            raise ValueError('이 글꼴에서 지원하지 않는 글자: '+''.join(missing[:24])+'\n다른 글꼴을 선택하세요.')
-        buffer=BytesIO()
-        font.save(buffer)  # Complete face; never subset, even when fsType=0x100.
-        return buffer.getvalue()
+    return _file_embed_bytes(str(Path(face.path).resolve()), face.index, stat.st_mtime_ns, stat.st_size,
+                             needed_chars(text), not (fresh.flags & 0x100))
+
+
+@lru_cache(maxsize=32)
+def builtin_font_bytes(chars):
+    """The program's built-in Korean font (MuPDF's Droid Sans Fallback), subset to chars."""
+    import pymupdf as fitz
+    return embed_bytes(fitz.Font('korea').buffer, 0, chars, True, '기본 한글 글꼴')
