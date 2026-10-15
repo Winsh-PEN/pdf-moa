@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 import tkinter as tk
+import multiprocessing
+import time
 from tkinter import ttk, messagebox, filedialog, colorchooser
 from pathlib import Path
 import pymupdf as fitz
@@ -7,8 +9,10 @@ from editing import page_bytes, selected_text, selected_fonts, selected_lines, e
 from fonts import installed_fonts, inspect_file, match_font, checked_font_bytes, BUILTIN_LABEL
 import ui
 from ui import px, icon_button
+from ocr import recognize_worker
 
 MODE_HINTS = {
+    'ocr': '단색 배경의 가로 글자를 여백과 함께 드래그하세요. 선택 영역과 가장자리 2pt를 배경색으로 덮습니다. 표 선·도장·사진이 겹치지 않게 선택하세요.',
     'replace': '바꿀 글자를 드래그해서 감싸세요. 글자 가운데가 영역 안에 들어간 글자만 선택되며, 원래 시작점과 줄 위치를 유지합니다.',
     'text': '새 글자를 넣을 영역을 드래그하세요.',
     'image': '사진을 넣을 영역을 드래그하세요. 사진은 비율을 유지해 영역 안에 들어갑니다.',
@@ -28,7 +32,9 @@ class TextDialog(ui.Dialog):
     submit_on_return = False  # Enter makes a new line; Ctrl+Enter applies
 
     def __init__(self, parent, initial='', original_fonts=(), original_size=12, data=None, rect=None, mode='replace',
-                 font_face=AUTO, color=None, title=None):
+                 font_face=AUTO, color=None, title=None, ocr_info=None):
+        self.ocr_info = ocr_info
+        self.background = tuple(ocr_info['background']) if ocr_info else (1,1,1)
         self.preview_source=data
         self.preview_rect=rect
         self.edit_mode=mode
@@ -67,7 +73,7 @@ class TextDialog(ui.Dialog):
 
         fonts=ttk.Labelframe(master,text='글꼴',padding=(px(self, 10),px(self, 6)))
         fonts.pack(fill='x')
-        ttk.Label(fonts,text='PDF 원래 글꼴: '+(', '.join(self.original_fonts) or '없음 (새 글자)'),wraplength=wrap).pack(anchor='w')
+        ttk.Label(fonts,text='PDF 원래 글꼴: '+('OCR은 글꼴을 알아낼 수 없습니다' if self.ocr_info else (', '.join(self.original_fonts) or '없음 (새 글자)')),wraplength=wrap).pack(anchor='w')
         auto=('✓ PC에서 같은 글꼴을 찾아 자동 선택했습니다.' if self.auto_face else
               '같은 글꼴을 찾지 못했거나 여러 글꼴이 섞여 있습니다. 사용할 글꼴을 고르세요.')
         ttk.Label(fonts,text=auto,style='Muted.TLabel',wraplength=wrap).pack(anchor='w',pady=(px(self, 2),gap))
@@ -113,6 +119,18 @@ class TextDialog(ui.Dialog):
         self.swatch=tk.PhotoImage(master=self,width=px(self, 16),height=px(self, 16))
         self.paint_swatch()
         ttk.Button(line,text='글자 색상',image=self.swatch,compound='left',style='Tool.TButton',command=self.choose_color).pack(side='left')
+        if self.ocr_info:
+            bgbar = ttk.Frame(words)
+            bgbar.pack(fill='x', pady=(gap,0))
+            ttk.Button(bgbar,text='배경색 직접 선택',command=self.choose_background).pack(side='left')
+            ttk.Button(bgbar,text='자동 감지 색으로',command=self.reset_background).pack(side='left',padx=gap)
+            self.bg_label=ttk.Label(bgbar)
+            self.bg_label.pack(side='left')
+            self.show_background()
+            confidence=self.ocr_info['confidence']
+            note='배경색을 자동 감지했습니다.' if confidence >= .85 else '배경이 고르지 않습니다. 배경색과 지울 범위를 꼭 확인하세요.'
+            ttk.Label(words,text=note+' 선택 영역을 지우고 가장자리 2pt까지 배경색으로 덮습니다. OCR 오타·글꼴·크기를 확인하세요.',
+                      style='Muted.TLabel',wraplength=wrap).pack(fill='x',pady=(gap,0))
         self.size_var.trace_add('write',lambda *args:self.schedule_preview())
         self.filter_fonts()
         self.schedule_preview()
@@ -136,11 +154,14 @@ class TextDialog(ui.Dialog):
         self.preview_job=self.after(220,self.update_preview)
 
     def update_preview(self):
+        if self.preview_job:
+            self.after_cancel(self.preview_job)
         self.preview_job=None
         try:
             if self.combo.current()<0:raise ValueError('글꼴을 선택하세요.')
             data=edit_page(self.preview_source,self.preview_rect,self.edit_mode,
-                          text=self.text.get('1.0','end-1c'),size=float(self.size.get()),color=self.color,font_face=self.font_face)
+                          text=self.text.get('1.0','end-1c'),size=float(self.size.get()),color=self.color,font_face=self.font_face,
+                          **self.ocr_options())
             self.preview_result=data
             self.draw_preview()
             self.live_status.configure(text='저장에 적용될 모습입니다. [적용]을 누르면 반영됩니다.',foreground=ui.MUTED)
@@ -225,6 +246,26 @@ class TextDialog(ui.Dialog):
             self.paint_swatch()
             self.schedule_preview()
 
+    def ocr_options(self):
+        return dict(background=self.background,ocr_lines=self.ocr_info['lines']) if self.ocr_info else {}
+
+    def show_background(self):
+        color='#%02x%02x%02x' % tuple(round(v*255) for v in self.background)
+        self.bg_label.configure(text=color,background=color,foreground='white' if sum(self.background)<1.5 else 'black')
+
+    def choose_background(self):
+        initial='#%02x%02x%02x' % tuple(round(v*255) for v in self.background)
+        rgb,_=colorchooser.askcolor(initialcolor=initial,parent=self,title='지울 영역의 배경색')
+        if rgb is not None:
+            self.background=tuple(v/255 for v in rgb)
+            self.show_background()
+            self.schedule_preview()
+
+    def reset_background(self):
+        self.background=tuple(self.ocr_info['background'])
+        self.show_background()
+        self.schedule_preview()
+
     def validate(self):
         try:
             self.value_size = float(self.size.get())
@@ -288,6 +329,10 @@ class PageEditor(tk.Toplevel):
         self.scale_label.pack(side='right')
         icon_button(bar,'','zoom_out',lambda:self.change_zoom(0.8),style='Icon.TButton',tip='축소 (Ctrl+휠 아래)').pack(side='right',padx=(0,px(self, 4)))
         ttk.Separator(self,orient='horizontal').pack(fill='x')
+        ocrbar=ttk.Frame(self,padding=(px(self,14),px(self,4)))
+        ocrbar.pack(fill='x')
+        ttk.Radiobutton(ocrbar,text='OCR 글자 교체',variable=self.mode,value='ocr',style='Toolbutton',command=self.mode_changed).pack(side='left')
+        ttk.Label(ocrbar,text='스캔 문서 · 단색 배경 · 한글/영문 · PC 안에서 인식',style='Muted.TLabel').pack(side='left',padx=px(self,10))
         self.hint = ttk.Label(self,text=MODE_HINTS['replace'],style='Muted.TLabel',padding=(px(self, 14),px(self, 8)))
         self.hint.pack(fill='x')
         self.hint.bind('<Configure>',lambda e:self.hint.configure(wraplength=max(px(self, 200),e.width-px(self, 30))))
@@ -434,7 +479,18 @@ class PageEditor(tk.Toplevel):
             return
         try:
             mode = self.mode.get()
-            if mode == 'image':
+            if mode == 'ocr':
+                info = OCRProgress(self,self.data,rect).result
+                if info is None:
+                    return
+                dialog=TextDialog(self,info['text'],[],info['size'],self.data,rect,'ocr',
+                                  color=info['color'],title='OCR 글자 교체 · 단색 배경',ocr_info=info)
+                if not dialog.result:
+                    return
+                text,size,color,font_face=dialog.result
+                kw=dict(text=text,size=size,color=color,font_face=font_face,**dialog.ocr_options())
+                result=dialog.preview_result
+            elif mode == 'image':
                 path = filedialog.askopenfilename(parent=self,filetypes=IMAGE_TYPES)
                 if not path:
                     return
@@ -454,7 +510,7 @@ class PageEditor(tk.Toplevel):
             else:
                 old = selected_text(self.data,rect) if mode=='replace' else ''
                 if mode=='replace' and not old.strip():
-                    raise ValueError('선택 영역에 글자가 없습니다. 스캔 이미지 속 글자는 교체할 수 없습니다.')
+                    raise ValueError('선택 영역에 글자가 없습니다. 스캔 문서는 OCR 글자 교체를 사용하세요.')
                 names,size=selected_fonts(self.data,rect) if mode=='replace' else ([],12)
                 if mode == 'replace':
                     self.show_selection(rect)
@@ -639,4 +695,77 @@ class PageEditor(tk.Toplevel):
         if self.pending:
             self.after_cancel(self.pending)
         self.grab_release()
+        self.destroy()
+
+
+class OCRProgress(tk.Toplevel):
+    """Cancelable OCR process; no document or recognition data leaves this PC."""
+    def __init__(self,parent,data,rect):
+        super().__init__(parent)
+        self.result=None
+        self.job=None
+        self.process=None
+        self.connection=None
+        self.title('글자 인식 중')
+        self.transient(parent)
+        self.configure(bg=ui.BG)
+        frame=ttk.Frame(self,padding=24)
+        frame.pack(fill='both',expand=True)
+        ttk.Label(frame,text='선택 영역에서 한글·영문을 읽고 있습니다…').pack(pady=(0,12))
+        self.bar=ttk.Progressbar(frame,mode='indeterminate',length=320)
+        self.bar.pack(fill='x')
+        self.bar.start()
+        ttk.Button(frame,text='취소',command=self.cancel).pack(pady=(12,0))
+        self.protocol('WM_DELETE_WINDOW',self.cancel)
+        self.bind('<Escape>',lambda e:self.cancel())
+        self.grab_set()
+        try:
+            context=multiprocessing.get_context('spawn')
+            self.connection,sender=context.Pipe(duplex=False)
+            self.process=context.Process(target=recognize_worker,args=(sender,data,rect),daemon=True)
+            self.process.start()
+            sender.close()
+            self.started=time.monotonic()
+            self.job=self.after(100,self.poll)
+            self.wait_window()
+        except Exception:
+            self.cancel()
+            raise
+
+    def poll(self):
+        self.job=None
+        try:
+            if self.connection.poll():
+                status,value=self.connection.recv()
+                if status=='ok':
+                    self.result=value
+                else:
+                    messagebox.showerror('OCR 확인',value,parent=self)
+                self.cancel()
+                return
+            if not self.process.is_alive():
+                raise ValueError('글자 인식이 종료되었습니다. 더 작은 영역으로 다시 시도하세요.')
+            if time.monotonic()-self.started>90:
+                raise ValueError('인식 시간이 길어 중단했습니다. 한두 줄씩 선택해 주세요.')
+            self.job=self.after(100,self.poll)
+        except Exception as error:
+            messagebox.showerror('OCR 확인',str(error),parent=self)
+            self.cancel()
+
+    def cancel(self):
+        if self.job:
+            self.after_cancel(self.job)
+            self.job=None
+        if self.process is not None and self.process.pid:
+            if self.process.is_alive():
+                self.process.terminate()
+            self.process.join(timeout=1)
+            self.process.close()
+            self.process=None
+        if self.connection:
+            self.connection.close()
+            self.connection=None
+        self.bar.stop()
+        self.grab_release()
+        self.master.grab_set()
         self.destroy()

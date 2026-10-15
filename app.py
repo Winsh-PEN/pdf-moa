@@ -20,7 +20,7 @@ from dialogs import SplitDialog
 import ui
 from ui import px, icon_button
 
-VERSION = '1.3.0-rc1'
+VERSION = '1.4.0-rc1'
 LIST_WIDTH = 440  # default page-list width at 100% scaling
 THUMB_SIZES = {'small': (40, 52), 'large': (72, 96)}  # thumbnail cell at 100% scaling
 
@@ -882,6 +882,8 @@ def report_error(exc, value, tb):
 
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     ui.enable_dpi_awareness()
     root = TkinterDnD.Tk()
     root.report_callback_exception = report_error

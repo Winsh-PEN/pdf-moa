@@ -129,6 +129,14 @@
       "license_files": [
         "licenses/MuPDF/COPYING"
       ]
+    },
+    {
+      "name": "tessdata_fast",
+      "version": "4.1.0",
+      "license_files": [
+        "licenses/tessdata_fast/LICENSE"
+      ],
+      "sources": "licenses/tessdata_fast/SOURCES.json"
     }
   ]
 }

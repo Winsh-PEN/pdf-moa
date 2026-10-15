@@ -7,7 +7,7 @@ from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
 from fonts import checked_font_bytes, builtin_font_bytes, needed_chars
 
-MODES = ('replace', 'text', 'image', 'delete')
+MODES = ('replace', 'text', 'image', 'delete', 'ocr')
 ROTATIONS = {(1,0):0,(0,-1):90,(-1,0):180,(0,1):270}
 # Formats MuPDF places directly; anything else is converted with Pillow.
 NATIVE_IMAGE_FORMATS = {'JPEG', 'PNG', 'BMP', 'GIF', 'TIFF'}
@@ -160,7 +160,8 @@ def fitted_rect(box, width, height):
     return fitz.Rect(x, y, x + w, y + h)
 
 
-def edit_page(data, rect, mode, text='', size=12, color=(0,0,0), image=None, font_face=None):
+def edit_page(data, rect, mode, text='', size=12, color=(0,0,0), image=None, font_face=None,
+              background=(1,1,1), ocr_lines=None):
     with fitz.open(stream=data, filetype='pdf') as doc:
         page = doc[0]
         box = fitz.Rect(rect) & page.rect
@@ -174,13 +175,38 @@ def edit_page(data, rect, mode, text='', size=12, color=(0,0,0), image=None, fon
             lines = selected_lines(page, box)
             if not lines:
                 raise ValueError('선택 영역에 글자가 없습니다. 스캔 이미지 속 글자는 바꾸거나 지울 수 없습니다.')
-        if mode in ('replace', 'text'):
+        if mode in ('replace', 'text', 'ocr'):
             if not 4 <= size <= 144 or not text.strip():
                 raise ValueError('새 글자와 4~144pt 크기를 입력하세요.')
             # Measure with the same font that is embedded, so the width checks hold.
             fontname, fontbuffer = embedded_font(font_face, text)
             font = fitz.Font(fontbuffer=fontbuffer)
-        if mode == 'replace':
+        if mode == 'ocr':
+            if any(a.type[0] == fitz.PDF_ANNOT_REDACT for a in page.annots() or []):
+                raise ValueError('기존 삭제 표시를 먼저 처리한 뒤 다시 여세요.')
+            if len(background) != 3 or any(not 0 <= v <= 1 for v in background):
+                raise ValueError('배경색을 확인하세요.')
+            values = text.splitlines()
+            if not ocr_lines or len(values) > len(ocr_lines):
+                raise ValueError('인식한 줄 수 안에서 수정하세요. 새 줄은 글자 추가 기능을 사용하세요.')
+            for value, line in zip(values, ocr_lines):
+                x, y = line['origin']
+                if not box.x0 <= x < box.x1 or not box.y0 <= y <= box.y1:
+                    raise ValueError('인식 위치가 선택 영역을 벗어났습니다. 다시 선택하세요.')
+                if font.text_length(value, fontsize=size) > box.x1-x+.5 or y-size*font.ascender < box.y0-.5 or y-size*font.descender > box.y1+.5:
+                    raise ValueError('글자가 영역을 벗어납니다. 크기를 줄이거나 영역을 넓혀 다시 선택하세요.')
+            # Clear scan pixels and any old hidden OCR text, not just a visual overlay.
+            page.add_redact_annot(box, fill=background, cross_out=False)
+            page.apply_redactions(images=2, graphics=0, text=0)
+            # Image resampling can expose a pale fringe around redacted pixels.
+            # Paint a small, explicit safety margin; the live preview shows it.
+            cover=(box+(-2,-2,2,2)) & page.rect
+            page.draw_rect(cover,color=None,fill=background,overlay=True)
+            page.insert_font(fontname=fontname, fontbuffer=fontbuffer)
+            for value, line in zip(values, ocr_lines):
+                if value:
+                    page.insert_text(line['origin'], value, fontsize=size, fontname=fontname, color=color, overlay=True)
+        elif mode == 'replace':
             values = text.splitlines()
             if len(values) > len(lines):
                 raise ValueError('원래 줄 수보다 많습니다. 줄 수를 줄이거나 글자 추가 기능을 사용하세요.')
