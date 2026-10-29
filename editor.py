@@ -10,6 +10,7 @@ from fonts import installed_fonts, inspect_file, match_font, checked_font_bytes,
 import ui
 from ui import px, icon_button
 from ocr import recognize_worker
+from stamps import StampDialog
 
 MODE_HINTS = {
     'ocr': '단색 배경의 가로 글자를 여백과 함께 드래그하세요. 선택 영역과 가장자리 2pt를 배경색으로 덮습니다. 표 선·도장·사진이 겹치지 않게 선택하세요.',
@@ -307,6 +308,7 @@ class PageEditor(tk.Toplevel):
         # The edits in order, each dict(mode, rect, kw) for edit_page. Text and
         # images added here can be moved later: that edit and the ones after it
         # are applied again. states[k] is the page after the first k edits.
+        self.stamp_image = None
         self.ops = []
         self.states = [data]
         self.undo_stack = []  # earlier (ops, states); the lists are replaced, never changed in place
@@ -331,6 +333,7 @@ class PageEditor(tk.Toplevel):
         ttk.Separator(self,orient='horizontal').pack(fill='x')
         ocrbar=ttk.Frame(self,padding=(px(self,14),px(self,4)))
         ocrbar.pack(fill='x')
+        ttk.Button(ocrbar,text='도장·서명 즐겨찾기',command=self.pick_stamp).pack(side='right')
         ttk.Radiobutton(ocrbar,text='OCR 글자 교체',variable=self.mode,value='ocr',style='Toolbutton',command=self.mode_changed).pack(side='left')
         ttk.Label(ocrbar,text='스캔 문서 · 단색 배경 · 한글/영문 · PC 안에서 인식',style='Muted.TLabel').pack(side='left',padx=px(self,10))
         self.hint = ttk.Label(self,text=MODE_HINTS['replace'],style='Muted.TLabel',padding=(px(self, 14),px(self, 8)))
@@ -370,8 +373,18 @@ class PageEditor(tk.Toplevel):
         self.update_buttons()
         self.grab_set()
 
+    def pick_stamp(self):
+        dialog=StampDialog(self)
+        self.grab_set()
+        if dialog.result:
+            self.stamp_image=dialog.result
+            self.mode.set('image');self.mode_changed()
+            self.hint.configure(text='선택한 도장·서명을 넣을 영역을 드래그하세요. 적용 후 옮기기에서 위치와 크기를 조절할 수 있습니다.')
+
     def mode_changed(self):
         mode = self.mode.get()
+        if mode != 'image':
+            self.stamp_image = None
         movable = any(op['mode'] in MOVABLE for op in self.ops)
         self.hint.configure(text=MOVE_EMPTY if mode == 'move' and not movable else MODE_HINTS[mode])
         self.canvas.configure(cursor='' if mode == 'move' else 'crosshair')
@@ -491,10 +504,14 @@ class PageEditor(tk.Toplevel):
                 kw=dict(text=text,size=size,color=color,font_face=font_face,**dialog.ocr_options())
                 result=dialog.preview_result
             elif mode == 'image':
-                path = filedialog.askopenfilename(parent=self,filetypes=IMAGE_TYPES)
-                if not path:
-                    return
-                kw = dict(image=Path(path).read_bytes())
+                if self.stamp_image is not None:
+                    kw=dict(image=self.stamp_image)
+                    self.stamp_image=None
+                else:
+                    path = filedialog.askopenfilename(parent=self,filetypes=IMAGE_TYPES)
+                    if not path:
+                        return
+                    kw = dict(image=Path(path).read_bytes())
                 result = edit_page(self.data,rect,mode,**kw)
             elif mode == 'delete':
                 old = selected_text(self.data,rect)

@@ -17,10 +17,11 @@ from fonts import installed_fonts
 from thumbs import Thumbnails, entry_key
 from settings import Settings
 from dialogs import SplitDialog
+from tools_ui import ToolsWindow
 import ui
 from ui import px, icon_button
 
-VERSION = '1.4.0-rc1'
+VERSION = '1.5.0-rc1'
 LIST_WIDTH = 440  # default page-list width at 100% scaling
 THUMB_SIZES = {'small': (40, 52), 'large': (72, 96)}  # thumbnail cell at 100% scaling
 
@@ -143,6 +144,8 @@ class App:
                 root.bind(f'<Control-{key.upper()}>', lambda event, action=action: action() or 'break')
         for key in ('R', 'r'):
             root.bind(f'<Control-Shift-{key}>', lambda event: self.rotate(-90) or 'break')
+        root.bind('<Control-f>',lambda event:self.open_tools() or 'break')
+        root.bind('<Control-F>',lambda event:self.open_tools() or 'break')
         root.protocol('WM_DELETE_WINDOW', self.on_close)
         self.refresh()
 
@@ -176,6 +179,13 @@ class App:
                                         tip='추가한 페이지 목록을 모두 비우기')
         self.clear_button.pack(side='right', padx=(0, px(root, 6)))
         ttk.Separator(root, orient='horizontal').pack(fill='x')
+        extra=ttk.Frame(root,padding=(16,4))
+        extra.pack(fill='x')
+        ttk.Button(extra,text='문서 도구 · 검색 / OCR / 압축 / 자르기 / 번호',command=self.open_tools).pack(side='left')
+        ttk.Label(extra,text='작업 저장·이어 열기도 문서 도구에서 · Ctrl+F',style='Muted.TLabel').pack(side='left',padx=12)
+
+    def open_tools(self):
+        ToolsWindow(self)
 
     def build_footer(self):
         root = self.root
